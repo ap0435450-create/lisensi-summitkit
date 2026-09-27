@@ -248,12 +248,12 @@
     <button class="logout-btn" onclick="logoutSession()">LOGOUT</button>
 
     <div class="header">
-        <h1>KINKRII LISENSI STUDIO</h1>
+        <h1>SUMMITKIT LISENSI STUDIO</h1>
         <div class="sync-indicator" id="syncIndicator">Memuat status sync...</div>
         <div class="nav-buttons">
             <button class="nav-btn active" onclick="showSection('tambah')">TAMBAH</button>
             <button class="nav-btn" onclick="showSection('acc-list')">TER-ACC</button>
-            <button class="nav-btn" onclick="showSection('log')">LOG</button>
+            <button class="nav-btn" onclick="showSection('log')">LOG PENCURI</button>
             <button class="nav-btn" onclick="showSection('blacklist')">BLACKLIST</button>
             <button class="nav-btn" onclick="showSection('settings')">SETTINGS</button>
         </div>
@@ -320,18 +320,18 @@
 
                 <div class="gh-help">
                     Setiap kali kamu TAMBAH/HAPUS/BLACKLIST ID, web ini akan otomatis update
-                    file lisensi-data.json di GitHub kamu lewat Personal Access Token.<br><br>
-                    Cara bikin token: buka
-                    <a href="https://github.com/settings/tokens?type=beta" target="_blank">github.com/settings/tokens?type=beta</a>
-                    &rarr; Generate new token &rarr; pilih HANYA repo lisensi-summitkit &rarr;
-                    Permissions &rarr; Contents: Read and write &rarr; Generate &rarr; copy token
-                    (diawali "github_pat_...") &rarr; paste di bawah.
+                    data di JSONBin.io (cuma 2 hal yang perlu diisi, gak ribet kayak GitHub
+                    token).<br><br>
+                    Cara setup: buka <a href="https://jsonbin.io" target="_blank">jsonbin.io</a>
+                    &rarr; Sign Up (gratis) &rarr; Create Bin &rarr; isi JSON awal:
+                    <code>{"ids":[],"suspects":[],"blacklist":[],"lastUpdated":""}</code>
+                    &rarr; pastikan Privacy diset PUBLIC &rarr; Create &rarr; copy "Bin ID"-nya
+                    &rarr; buka menu API Keys di dashboard &rarr; copy "X-Master-Key"-nya
+                    &rarr; paste keduanya di bawah.
                 </div>
 
-                <div class="input-group"><input type="text" id="ghOwner" placeholder="Username GitHub (contoh: ap0435450-create)"></div>
-                <div class="input-group"><input type="text" id="ghRepo" placeholder="Nama Repo (contoh: lisensi-summitkit)"></div>
-                <div class="input-group"><input type="text" id="ghPath" placeholder="Nama File (default: lisensi-data.json)"></div>
-                <div class="input-group"><input type="password" id="ghToken" placeholder="Personal Access Token (github_pat_...)"></div>
+                <div class="input-group"><input type="text" id="ghBinId" placeholder="Bin ID (dari JSONBin.io)"></div>
+                <div class="input-group"><input type="password" id="ghToken" placeholder="X-Master-Key (dari JSONBin.io)"></div>
 
                 <button class="btn-primary" onclick="saveGithubSettings()">Simpan Pengaturan</button>
                 <br>
