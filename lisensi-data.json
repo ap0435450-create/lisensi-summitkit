@@ -1,40 +1,14 @@
 {
   "ids": [
     {
-      "id": "8740222595598",
-      "owner": "Kinkrii",
+      "id": "10191272858",
+      "owner": "Kinkrii (Original Developer)",
       "status": "accepted",
-      "addedDate": "2024-09-26",
-      "notes": "Developer"
-    },
-    {
-      "id": "1234567890123",
-      "owner": "Player A",
-      "status": "accepted",
-      "addedDate": "2024-09-26",
-      "notes": "Verified Player"
-    },
-    {
-      "id": "9876543210987",
-      "owner": "Player B",
-      "status": "accepted",
-      "addedDate": "2024-09-26",
-      "notes": "Early Access"
+      "addedDate": "2026-09-27",
+      "notes": "Pemilik asli SummitKit - selalu diizinkan"
     }
   ],
-  "suspects": [
-    {
-      "id": "5555555555555",
-      "description": "Mencoba bypass lisensi",
-      "reportedDate": "2024-09-26"
-    }
-  ],
-  "blacklist": [
-    {
-      "id": "9999999999999",
-      "reason": "Hacker - Modded game",
-      "blacklistedDate": "2024-09-26"
-    }
-  ],
-  "lastUpdated": "2024-09-26T12:00:00Z"
+  "suspects": [],
+  "blacklist": [],
+  "lastUpdated": "2026-09-27T00:00:00Z"
 }
