@@ -25,7 +25,7 @@ function updateSyncIndicatorIdle() {
     const syncEl = document.getElementById('syncIndicator');
     if (!syncEl) return;
     const settings = loadGithubSettings();
-    if (settings && settings.token) {
+    if (settings && settings.masterKey) {
         syncEl.textContent = 'Auto-sync AKTIF (tersimpan di perangkat ini)';
         syncEl.style.color = '#66ff99';
     } else {
@@ -282,44 +282,38 @@ function importData(event) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// GITHUB AUTO-SYNC
+// JSONBIN AUTO-SYNC (lebih simpel dari GitHub API)
 // ─────────────────────────────────────────────────────────────────────────
 
 function fillGithubSettingsForm() {
     const settings = loadGithubSettings();
     if (!settings) return;
-    const ownerEl = document.getElementById('ghOwner');
-    const repoEl = document.getElementById('ghRepo');
-    const pathEl = document.getElementById('ghPath');
-    if (ownerEl) ownerEl.value = settings.owner || '';
-    if (repoEl) repoEl.value = settings.repo || '';
-    if (pathEl) pathEl.value = settings.path || 'lisensi-data.json';
-    // Token sengaja TIDAK diisi ulang ke form (biar tidak nampang di layar)
+    const binEl = document.getElementById('ghBinId');
+    if (binEl) binEl.value = settings.binId || '';
+    // Master Key sengaja TIDAK diisi ulang ke form (biar tidak nampang di layar)
 }
 
 function saveGithubSettings() {
-    const owner = document.getElementById('ghOwner').value.trim();
-    const repo = document.getElementById('ghRepo').value.trim();
-    const path = document.getElementById('ghPath').value.trim() || 'lisensi-data.json';
-    const tokenInput = document.getElementById('ghToken');
-    const newToken = tokenInput.value.trim();
+    const binId = document.getElementById('ghBinId').value.trim();
+    const keyInput = document.getElementById('ghToken');
+    const newKey = keyInput.value.trim();
 
-    if (!owner || !repo) {
-        alert('Owner dan Repo wajib diisi!');
+    if (!binId) {
+        alert('Bin ID wajib diisi!');
         return;
     }
 
     const existing = loadGithubSettings();
-    const token = newToken || (existing ? existing.token : '');
+    const masterKey = newKey || (existing ? existing.masterKey : '');
 
-    if (!token) {
-        alert('Token wajib diisi minimal sekali!');
+    if (!masterKey) {
+        alert('Master Key wajib diisi minimal sekali!');
         return;
     }
 
-    localStorage.setItem(GITHUB_SETTINGS_KEY, JSON.stringify({ owner, repo, path, token }));
-    tokenInput.value = '';
-    alert('Pengaturan GitHub tersimpan di perangkat ini.');
+    localStorage.setItem(GITHUB_SETTINGS_KEY, JSON.stringify({ binId, masterKey }));
+    keyInput.value = '';
+    alert('Pengaturan tersimpan di perangkat ini.');
     updateGithubStatus();
 }
 
@@ -333,7 +327,7 @@ function loadGithubSettings() {
 }
 
 function clearGithubSettings() {
-    if (confirm('Hapus token GitHub yang tersimpan di perangkat ini? Auto-sync akan berhenti.')) {
+    if (confirm('Hapus pengaturan tersimpan di perangkat ini? Auto-sync akan berhenti.')) {
         localStorage.removeItem(GITHUB_SETTINGS_KEY);
         updateGithubStatus();
         fillGithubSettingsForm();
@@ -344,8 +338,8 @@ function updateGithubStatus() {
     const el = document.getElementById('ghStatus');
     if (!el) return;
     const settings = loadGithubSettings();
-    if (settings && settings.token) {
-        el.textContent = `AUTO-SYNC AKTIF -> ${settings.owner}/${settings.repo}/${settings.path}`;
+    if (settings && settings.masterKey) {
+        el.textContent = `AUTO-SYNC AKTIF -> Bin ID: ${settings.binId}`;
         el.style.color = '#66ff99';
     } else {
         el.textContent = 'AUTO-SYNC BELUM DISETEL. Data cuma tersimpan lokal di HP ini.';
@@ -357,7 +351,7 @@ async function syncToGithub() {
     const settings = loadGithubSettings();
     const syncEl = document.getElementById('syncIndicator');
 
-    if (!settings || !settings.token) {
+    if (!settings || !settings.masterKey) {
         if (syncEl) {
             syncEl.textContent = 'Auto-sync belum disetel (lihat menu SETTINGS)';
             syncEl.style.color = '#888888';
@@ -371,46 +365,22 @@ async function syncToGithub() {
         blacklist: window.blacklist,
         lastUpdated: new Date().toISOString()
     };
-    const jsonString = JSON.stringify(payload, null, 2);
-    const contentBase64 = btoa(unescape(encodeURIComponent(jsonString)));
-    const apiUrl = `https://api.github.com/repos/${settings.owner}/${settings.repo}/contents/${settings.path}`;
+
+    const apiUrl = `https://api.jsonbin.io/v3/b/${settings.binId}`;
 
     if (syncEl) {
-        syncEl.textContent = 'Menyinkronkan ke GitHub...';
+        syncEl.textContent = 'Menyinkronkan...';
         syncEl.style.color = '#ffcc00';
     }
 
     try {
-        const getResp = await fetch(apiUrl, {
-            headers: {
-                'Authorization': `Bearer ${settings.token}`,
-                'Accept': 'application/vnd.github+json'
-            }
-        });
-
-        let sha = null;
-        if (getResp.ok) {
-            const getData = await getResp.json();
-            sha = getData.sha;
-        } else if (getResp.status !== 404) {
-            const errData = await getResp.json().catch(() => ({}));
-            throw new Error(errData.message || `Gagal ambil data (HTTP ${getResp.status})`);
-        }
-
-        const body = {
-            message: `Update lisensi via web - ${new Date().toLocaleString('id-ID')}`,
-            content: contentBase64
-        };
-        if (sha) body.sha = sha;
-
         const putResp = await fetch(apiUrl, {
             method: 'PUT',
             headers: {
-                'Authorization': `Bearer ${settings.token}`,
-                'Accept': 'application/vnd.github+json',
-                'Content-Type': 'application/json'
+                'Content-Type': 'application/json',
+                'X-Master-Key': settings.masterKey
             },
-            body: JSON.stringify(body)
+            body: JSON.stringify(payload)
         });
 
         if (!putResp.ok) {
@@ -419,18 +389,19 @@ async function syncToGithub() {
         }
 
         if (syncEl) {
-            syncEl.textContent = 'Tersinkron ke GitHub \u2713 (' + new Date().toLocaleTimeString('id-ID') + ')';
+            syncEl.textContent = 'Tersinkron \u2713 (' + new Date().toLocaleTimeString('id-ID') + ')';
             syncEl.style.color = '#66ff99';
         }
     } catch (err) {
         console.error('Sync error:', err);
         if (syncEl) {
-            syncEl.textContent = 'GAGAL sync ke GitHub: ' + err.message;
+            syncEl.textContent = 'GAGAL sync: ' + err.message;
             syncEl.style.color = '#ff6666';
         }
-        alert('Gagal sync otomatis ke GitHub: ' + err.message + '\n\nData tetap aman tersimpan lokal, dan kamu masih bisa EXPORT DATA lalu update manual.');
+        alert('Gagal sync otomatis: ' + err.message + '\n\nData tetap aman tersimpan lokal, dan kamu masih bisa EXPORT DATA lalu update manual.');
     }
 }
+
 
 // ─────────────────────────────────────────────────────────────────────────
 // UPDATE ALL DISPLAYS
