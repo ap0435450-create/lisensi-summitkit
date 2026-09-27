@@ -16,7 +16,23 @@ window.onload = function() {
     updateAllDisplay();
     fillGithubSettingsForm();
     updateGithubStatus();
+    updateSyncIndicatorIdle();
 };
+
+// Set teks indikator sync di header saat halaman pertama dibuka
+// (sebelum ada aksi tambah/hapus apapun)
+function updateSyncIndicatorIdle() {
+    const syncEl = document.getElementById('syncIndicator');
+    if (!syncEl) return;
+    const settings = loadGithubSettings();
+    if (settings && settings.token) {
+        syncEl.textContent = 'Auto-sync AKTIF (tersimpan di perangkat ini)';
+        syncEl.style.color = '#66ff99';
+    } else {
+        syncEl.textContent = 'Auto-sync belum disetel (lihat menu SETTINGS)';
+        syncEl.style.color = '#888888';
+    }
+}
 
 // ─────────────────────────────────────────────────────────────────────────
 // SECTION NAVIGATION
