@@ -1,11 +1,40 @@
 // ═══════════════════════════════════════════════════════════════════════════
-// SUMMITKIT LISENSI STUDIO - MAIN SCRIPT (dengan Auto-Sync GitHub)
+// SUMMITKIT LISENSI STUDIO - MAIN SCRIPT v2 (JSONBin auto-sync)
+// Perubahan: payload publik minimal, tarik data bin sebelum sync (anti-timpa),
+// escape HTML, validasi ID angka, showSection tanpa global event.
 // ═══════════════════════════════════════════════════════════════════════════
 
 const STORAGE_KEY = 'summitkit_licenses';
 const SUSPECT_KEY = 'summitkit_suspects';
 const BLACKLIST_KEY = 'summitkit_blacklist';
 const GITHUB_SETTINGS_KEY = 'summitkit_github_settings';
+const DIRTY_KEY = 'summitkit_dirty'; // '1' = ada perubahan lokal yang belum sampai ke bin
+
+let pulled = false; // true setelah data bin berhasil diambil di sesi ini
+
+// ─────────────────────────────────────────────────────────────────────────
+// HELPER
+// ─────────────────────────────────────────────────────────────────────────
+
+function esc(value) {
+    return String(value == null ? '' : value)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
+function isValidId(id) {
+    return /^\d{5,}$/.test(id);
+}
+
+function setSync(text, color) {
+    const el = document.getElementById('syncIndicator');
+    if (!el) return;
+    el.textContent = text;
+    el.style.color = color;
+}
 
 // ─────────────────────────────────────────────────────────────────────────
 // INITIALIZE APP
@@ -17,20 +46,28 @@ window.onload = function() {
     fillGithubSettingsForm();
     updateGithubStatus();
     updateSyncIndicatorIdle();
+    initialPull();
 };
 
-// Set teks indikator sync di header saat halaman pertama dibuka
-// (sebelum ada aksi tambah/hapus apapun)
 function updateSyncIndicatorIdle() {
-    const syncEl = document.getElementById('syncIndicator');
-    if (!syncEl) return;
     const settings = loadGithubSettings();
     if (settings && settings.masterKey) {
-        syncEl.textContent = 'Auto-sync AKTIF (tersimpan di perangkat ini)';
-        syncEl.style.color = '#66ff99';
+        setSync('Auto-sync AKTIF (tersimpan di perangkat ini)', '#66ff99');
     } else {
-        syncEl.textContent = 'Auto-sync belum disetel (lihat menu SETTINGS)';
-        syncEl.style.color = '#888888';
+        setSync('Auto-sync belum disetel (lihat menu SETTINGS)', '#888888');
+    }
+}
+
+async function initialPull() {
+    const settings = loadGithubSettings();
+    if (!settings || !settings.masterKey) return;
+    setSync('Mengambil data dari JSONBin...', '#ffcc00');
+    try {
+        await pullFromBin();
+        setSync('Data bin termuat \u2713 (' + new Date().toLocaleTimeString('id-ID') + ')', '#66ff99');
+    } catch (err) {
+        console.error('Pull error:', err);
+        setSync('GAGAL ambil data bin: ' + err.message + ' (sync ditahan, reload halaman)', '#ff6666');
     }
 }
 
@@ -39,14 +76,11 @@ function updateSyncIndicatorIdle() {
 // ─────────────────────────────────────────────────────────────────────────
 
 function showSection(sectionId) {
-    document.querySelectorAll('.section').forEach(section => {
-        section.classList.remove('active');
-    });
-    document.querySelectorAll('.nav-btn').forEach(btn => {
-        btn.classList.remove('active');
-    });
+    document.querySelectorAll('.section').forEach(section => section.classList.remove('active'));
+    document.querySelectorAll('.nav-btn').forEach(btn => btn.classList.remove('active'));
     document.getElementById(sectionId).classList.add('active');
-    event.target.classList.add('active');
+    const btn = document.querySelector('.nav-btn[onclick*="\'' + sectionId + '\'"]');
+    if (btn) btn.classList.add('active');
     updateAllDisplay();
     if (sectionId === 'settings') {
         fillGithubSettingsForm();
@@ -55,28 +89,23 @@ function showSection(sectionId) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// LOCAL STORAGE FUNCTIONS
+// LOCAL STORAGE
 // ─────────────────────────────────────────────────────────────────────────
 
+function readArray(key) {
+    try {
+        const raw = localStorage.getItem(key);
+        const parsed = raw ? JSON.parse(raw) : [];
+        return Array.isArray(parsed) ? parsed : [];
+    } catch (e) {
+        return [];
+    }
+}
+
 function loadData() {
-    try {
-        const data = localStorage.getItem(STORAGE_KEY);
-        window.licenses = data ? JSON.parse(data) : [];
-    } catch (e) {
-        window.licenses = [];
-    }
-    try {
-        const suspects = localStorage.getItem(SUSPECT_KEY);
-        window.suspects = suspects ? JSON.parse(suspects) : [];
-    } catch (e) {
-        window.suspects = [];
-    }
-    try {
-        const blacklist = localStorage.getItem(BLACKLIST_KEY);
-        window.blacklist = blacklist ? JSON.parse(blacklist) : [];
-    } catch (e) {
-        window.blacklist = [];
-    }
+    window.licenses = readArray(STORAGE_KEY);
+    window.suspects = readArray(SUSPECT_KEY);
+    window.blacklist = readArray(BLACKLIST_KEY);
 }
 
 function saveData() {
@@ -90,14 +119,14 @@ function saveData() {
     }
 }
 
-// Dipanggil setiap kali ada perubahan data: simpan lokal + sync ke GitHub
 function persistAndSync() {
+    localStorage.setItem(DIRTY_KEY, '1');
     saveData();
     syncToGithub();
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// ADD NEW LICENSE ID
+// LICENSE IDs
 // ─────────────────────────────────────────────────────────────────────────
 
 function addNewId() {
@@ -114,8 +143,8 @@ function addNewId() {
         idInput.focus();
         return;
     }
-    if (isNaN(id) || id.length < 5) {
-        alert('ID harus berupa angka yang valid!');
+    if (!isValidId(id)) {
+        alert('ID harus berupa angka (minimal 5 digit)!');
         return;
     }
     if (window.licenses.some(lic => lic.id === id)) {
@@ -138,7 +167,7 @@ function addNewId() {
     notesInput.value = '';
 
     updateAllDisplay();
-    alert('ID berhasil ditambahkan! Sedang sinkron ke GitHub...');
+    alert('ID berhasil ditambahkan! Sedang sinkron ke JSONBin...');
 }
 
 function toggleStatus(id) {
@@ -159,7 +188,7 @@ function deleteLicense(id) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// SUSPECT / LOG PENCURI
+// SUSPECT / LOG PENCURI (hanya lokal, TIDAK dikirim ke bin publik)
 // ─────────────────────────────────────────────────────────────────────────
 
 function addSuspect() {
@@ -179,18 +208,18 @@ function addSuspect() {
         reportedDate: new Date().toLocaleString('id-ID')
     });
 
-    persistAndSync();
+    saveData();
 
     idInput.value = '';
     descInput.value = '';
     updateAllDisplay();
-    alert('Pencuri berhasil dicatat! (Catatan: LOG PENCURI tidak otomatis blokir, pindahkan ke BLACKLIST kalau mau diblokir)');
+    alert('Pencuri dicatat (hanya di perangkat ini). LOG PENCURI tidak otomatis blokir, pindahkan ke BLACKLIST kalau mau diblokir. Gunakan EXPORT DATA untuk backup.');
 }
 
 function deleteSuspect(index) {
     if (confirm('Hapus laporan ini?')) {
         window.suspects.splice(index, 1);
-        persistAndSync();
+        saveData();
         updateAllDisplay();
     }
 }
@@ -209,6 +238,10 @@ function addBlacklist() {
         alert('Masukkan ID dan alasan blacklist!');
         return;
     }
+    if (!isValidId(id)) {
+        alert('ID harus berupa angka (minimal 5 digit)!');
+        return;
+    }
     if (window.blacklist.some(b => b.id === id)) {
         alert('ID sudah di-blacklist!');
         return;
@@ -225,7 +258,7 @@ function addBlacklist() {
     idInput.value = '';
     reasonInput.value = '';
     updateAllDisplay();
-    alert('ID berhasil di-blacklist! Sedang sinkron ke GitHub...');
+    alert('ID berhasil di-blacklist! Sedang sinkron ke JSONBin...');
 }
 
 function deleteBlacklist(id) {
@@ -237,7 +270,7 @@ function deleteBlacklist(id) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// EXPORT / IMPORT (tetap ada sebagai backup manual)
+// EXPORT / IMPORT
 // ─────────────────────────────────────────────────────────────────────────
 
 function exportData() {
@@ -247,8 +280,7 @@ function exportData() {
         blacklist: window.blacklist,
         exportDate: new Date().toISOString()
     };
-    const jsonString = JSON.stringify(data, null, 2);
-    const blob = new Blob([jsonString], { type: 'application/json' });
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
@@ -267,9 +299,23 @@ function importData(event) {
     reader.onload = function(e) {
         try {
             const data = JSON.parse(e.target.result);
-            if (data.licenses) window.licenses = data.licenses;
-            if (data.suspects) window.suspects = data.suspects;
-            if (data.blacklist) window.blacklist = data.blacklist;
+            if (Array.isArray(data.licenses)) {
+                window.licenses = data.licenses.filter(l => l && isValidId(String(l.id))).map(l => ({
+                    id: String(l.id),
+                    owner: String(l.owner || 'N/A'),
+                    notes: String(l.notes || 'N/A'),
+                    status: l.status === 'accepted' ? 'accepted' : 'banned',
+                    addedDate: String(l.addedDate || new Date().toLocaleString('id-ID'))
+                }));
+            }
+            if (Array.isArray(data.suspects)) window.suspects = data.suspects;
+            if (Array.isArray(data.blacklist)) {
+                window.blacklist = data.blacklist.filter(b => b && isValidId(String(b.id))).map(b => ({
+                    id: String(b.id),
+                    reason: String(b.reason || 'N/A'),
+                    blacklistedDate: String(b.blacklistedDate || new Date().toLocaleString('id-ID'))
+                }));
+            }
             persistAndSync();
             updateAllDisplay();
             alert('Data berhasil di-import & disinkronkan!');
@@ -282,7 +328,7 @@ function importData(event) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// JSONBIN AUTO-SYNC (lebih simpel dari GitHub API)
+// JSONBIN SETTINGS
 // ─────────────────────────────────────────────────────────────────────────
 
 function fillGithubSettingsForm() {
@@ -290,7 +336,6 @@ function fillGithubSettingsForm() {
     if (!settings) return;
     const binEl = document.getElementById('ghBinId');
     if (binEl) binEl.value = settings.binId || '';
-    // Master Key sengaja TIDAK diisi ulang ke form (biar tidak nampang di layar)
 }
 
 function saveGithubSettings() {
@@ -313,8 +358,11 @@ function saveGithubSettings() {
 
     localStorage.setItem(GITHUB_SETTINGS_KEY, JSON.stringify({ binId, masterKey }));
     keyInput.value = '';
+    pulled = false;
     alert('Pengaturan tersimpan di perangkat ini.');
     updateGithubStatus();
+    updateSyncIndicatorIdle();
+    initialPull();
 }
 
 function loadGithubSettings() {
@@ -329,8 +377,10 @@ function loadGithubSettings() {
 function clearGithubSettings() {
     if (confirm('Hapus pengaturan tersimpan di perangkat ini? Auto-sync akan berhenti.')) {
         localStorage.removeItem(GITHUB_SETTINGS_KEY);
+        pulled = false;
         updateGithubStatus();
         fillGithubSettingsForm();
+        updateSyncIndicatorIdle();
     }
 }
 
@@ -342,39 +392,108 @@ function updateGithubStatus() {
         el.textContent = `AUTO-SYNC AKTIF -> Bin ID: ${settings.binId}`;
         el.style.color = '#66ff99';
     } else {
-        el.textContent = 'AUTO-SYNC BELUM DISETEL. Data cuma tersimpan lokal di HP ini.';
+        el.textContent = 'AUTO-SYNC BELUM DISETEL. Data cuma tersimpan lokal di perangkat ini.';
         el.style.color = '#ff6666';
     }
 }
 
+// ─────────────────────────────────────────────────────────────────────────
+// JSONBIN: TARIK DATA (anti-timpa) & KIRIM DATA
+// ─────────────────────────────────────────────────────────────────────────
+
+// Bin = sumber kebenaran untuk daftar ID/blacklist & status.
+// Kalau ada perubahan lokal yang belum terkirim (dirty), data lokal ikut dipertahankan.
+async function pullFromBin() {
+    const settings = loadGithubSettings();
+    if (!settings || !settings.masterKey) return;
+
+    const resp = await fetch(`https://api.jsonbin.io/v3/b/${settings.binId}/latest`, {
+        headers: { 'X-Master-Key': settings.masterKey }
+    });
+    if (!resp.ok) {
+        const errData = await resp.json().catch(() => ({}));
+        throw new Error(errData.message || `HTTP ${resp.status}`);
+    }
+    const json = await resp.json();
+    const rec = (json && json.record) || {};
+    const remoteIds = Array.isArray(rec.ids) ? rec.ids : [];
+    const remoteBl = Array.isArray(rec.blacklist) ? rec.blacklist : [];
+    const dirty = localStorage.getItem(DIRTY_KEY) === '1';
+    const now = new Date().toLocaleString('id-ID');
+
+    const localLic = new Map(window.licenses.map(l => [l.id, l]));
+    const mergedLic = [];
+    const seenLic = new Set();
+    remoteIds.forEach(r => {
+        if (!r) return;
+        const id = String(r.id);
+        if (!isValidId(id) || seenLic.has(id)) return;
+        seenLic.add(id);
+        const loc = localLic.get(id);
+        const remoteStatus = r.status === 'accepted' ? 'accepted' : 'banned';
+        mergedLic.push({
+            id: id,
+            owner: (loc && loc.owner) || r.owner || 'N/A',
+            notes: (loc && loc.notes) || r.notes || 'N/A',
+            status: (dirty && loc) ? loc.status : remoteStatus,
+            addedDate: (loc && loc.addedDate) || r.addedDate || now
+        });
+    });
+    if (dirty) {
+        window.licenses.forEach(l => { if (!seenLic.has(l.id)) mergedLic.push(l); });
+    }
+
+    const localBl = new Map(window.blacklist.map(b => [b.id, b]));
+    const mergedBl = [];
+    const seenBl = new Set();
+    remoteBl.forEach(r => {
+        if (!r) return;
+        const id = String(r.id);
+        if (!isValidId(id) || seenBl.has(id)) return;
+        seenBl.add(id);
+        const loc = localBl.get(id);
+        mergedBl.push({
+            id: id,
+            reason: (loc && loc.reason) || r.reason || 'N/A',
+            blacklistedDate: (loc && loc.blacklistedDate) || r.blacklistedDate || now
+        });
+    });
+    if (dirty) {
+        window.blacklist.forEach(b => { if (!seenBl.has(b.id)) mergedBl.push(b); });
+    }
+
+    window.licenses = mergedLic;
+    window.blacklist = mergedBl;
+    saveData();
+    pulled = true;
+    updateAllDisplay();
+
+    if (dirty) await syncToGithub();
+}
+
 async function syncToGithub() {
     const settings = loadGithubSettings();
-    const syncEl = document.getElementById('syncIndicator');
 
     if (!settings || !settings.masterKey) {
-        if (syncEl) {
-            syncEl.textContent = 'Auto-sync belum disetel (lihat menu SETTINGS)';
-            syncEl.style.color = '#888888';
-        }
+        setSync('Auto-sync belum disetel (lihat menu SETTINGS)', '#888888');
+        return;
+    }
+    if (!pulled) {
+        setSync('Sync ditahan: data bin belum berhasil diambil. Reload halaman.', '#ff6666');
         return;
     }
 
+    // Payload PUBLIK: hanya yang dibutuhkan Roblox. Owner/notes/suspects tetap lokal.
     const payload = {
-        ids: window.licenses,
-        suspects: window.suspects,
-        blacklist: window.blacklist,
+        ids: window.licenses.map(l => ({ id: l.id, status: l.status })),
+        blacklist: window.blacklist.map(b => ({ id: b.id })),
         lastUpdated: new Date().toISOString()
     };
 
-    const apiUrl = `https://api.jsonbin.io/v3/b/${settings.binId}`;
-
-    if (syncEl) {
-        syncEl.textContent = 'Menyinkronkan...';
-        syncEl.style.color = '#ffcc00';
-    }
+    setSync('Menyinkronkan...', '#ffcc00');
 
     try {
-        const putResp = await fetch(apiUrl, {
+        const putResp = await fetch(`https://api.jsonbin.io/v3/b/${settings.binId}`, {
             method: 'PUT',
             headers: {
                 'Content-Type': 'application/json',
@@ -388,23 +507,17 @@ async function syncToGithub() {
             throw new Error(errData.message || `Gagal update (HTTP ${putResp.status})`);
         }
 
-        if (syncEl) {
-            syncEl.textContent = 'Tersinkron \u2713 (' + new Date().toLocaleTimeString('id-ID') + ')';
-            syncEl.style.color = '#66ff99';
-        }
+        localStorage.removeItem(DIRTY_KEY);
+        setSync('Tersinkron \u2713 (' + new Date().toLocaleTimeString('id-ID') + ')', '#66ff99');
     } catch (err) {
         console.error('Sync error:', err);
-        if (syncEl) {
-            syncEl.textContent = 'GAGAL sync: ' + err.message;
-            syncEl.style.color = '#ff6666';
-        }
-        alert('Gagal sync otomatis: ' + err.message + '\n\nData tetap aman tersimpan lokal, dan kamu masih bisa EXPORT DATA lalu update manual.');
+        setSync('GAGAL sync: ' + err.message, '#ff6666');
+        alert('Gagal sync otomatis: ' + err.message + '\n\nData tetap aman tersimpan lokal (akan dicoba lagi saat ada perubahan berikutnya), dan kamu masih bisa EXPORT DATA.');
     }
 }
 
-
 // ─────────────────────────────────────────────────────────────────────────
-// UPDATE ALL DISPLAYS
+// RENDER
 // ─────────────────────────────────────────────────────────────────────────
 
 function updateAllDisplay() {
@@ -426,14 +539,14 @@ function updateAcceptedList() {
         html += `
             <div class="id-item">
                 <div class="id-info">
-                    <div class="id-number">${license.id}</div>
-                    <div class="id-meta">${license.owner} \u2022 ${license.addedDate}</div>
+                    <div class="id-number">${esc(license.id)}</div>
+                    <div class="id-meta">${esc(license.owner)} \u2022 ${esc(license.addedDate)}</div>
                 </div>
                 <div class="id-actions">
-                    <button class="status-btn ${statusClass}" onclick="toggleStatus('${license.id}')">
+                    <button class="status-btn ${statusClass}" data-id="${esc(license.id)}" onclick="toggleStatus(this.dataset.id)">
                         ${license.status === 'accepted' ? 'DITERIMA' : 'DICABUT'}
                     </button>
-                    <button class="delete-btn" onclick="deleteLicense('${license.id}')">HAPUS</button>
+                    <button class="delete-btn" data-id="${esc(license.id)}" onclick="deleteLicense(this.dataset.id)">HAPUS</button>
                 </div>
             </div>
         `;
@@ -452,8 +565,8 @@ function updateLogList() {
         html += `
             <div class="id-item">
                 <div class="id-info">
-                    <div class="id-number">${suspect.id}</div>
-                    <div class="id-meta">${suspect.description} \u2022 ${suspect.reportedDate}</div>
+                    <div class="id-number">${esc(suspect.id)}</div>
+                    <div class="id-meta">${esc(suspect.description)} \u2022 ${esc(suspect.reportedDate)}</div>
                 </div>
                 <div class="id-actions">
                     <button class="delete-btn" onclick="deleteSuspect(${index})">HAPUS</button>
@@ -475,11 +588,11 @@ function updateBlacklistList() {
         html += `
             <div class="id-item">
                 <div class="id-info">
-                    <div class="id-number">${entry.id}</div>
-                    <div class="id-meta">${entry.reason} \u2022 ${entry.blacklistedDate}</div>
+                    <div class="id-number">${esc(entry.id)}</div>
+                    <div class="id-meta">${esc(entry.reason)} \u2022 ${esc(entry.blacklistedDate)}</div>
                 </div>
                 <div class="id-actions">
-                    <button class="delete-btn" onclick="deleteBlacklist('${entry.id}')">HAPUS</button>
+                    <button class="delete-btn" data-id="${esc(entry.id)}" onclick="deleteBlacklist(this.dataset.id)">HAPUS</button>
                 </div>
             </div>
         `;
@@ -490,7 +603,7 @@ function updateBlacklistList() {
 function updateStats() {
     const total = window.licenses.length;
     const accepted = window.licenses.filter(lic => lic.status === 'accepted').length;
-    const banned = window.licenses.filter(lic => lic.status === 'banned').length;
+    const banned = window.licenses.filter(lic => lic.status !== 'accepted').length;
     document.getElementById('totalAcc').textContent = total;
     document.getElementById('acceptedCount').textContent = accepted;
     document.getElementById('bannedCount').textContent = banned;
