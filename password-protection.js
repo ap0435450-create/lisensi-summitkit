@@ -4,7 +4,7 @@
 
 // ⚠️  UBAH PASSWORD INI KE PASSWORD KAMU!
 // Change this to your desired password
-const CORRECT_PASSWORD = "password123";
+const CORRECT_PASSWORD = "LicensiAriexKink";
 
 // Session keys
 const SESSION_KEY = 'summitkit_session';
